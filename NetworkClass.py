@@ -9,6 +9,8 @@ Complexity & Networks - Networks Project
 import numpy as np
 import copy
 import numba
+from logbin import logbin
+import matplotlib.pyplot as plt
 
 # ------------------------NETWORK CLASS-----------------------------
 
@@ -23,7 +25,7 @@ class BA_net:
         self.n = 0      # Num vertices in graph at any time
         self.k_sum = 0  # Running sum of all node degrees
         # Initialise array of degrees - ordered by chronology of node additions.
-        self.nodes = np.zeros_like([0 for i in range(N)], dtype = 'float')
+        self.nodes = np.zeros_like([0 for i in range(N)], dtype = 'int')
         return None
 
     @staticmethod
@@ -38,13 +40,13 @@ class BA_net:
         # Initialise graph
         _n_0 = 0
         while _n_0 < n_0:
-            nodes[_n_0] = 2
-            _n_0 += 1
+            nodes[_n_0] = int(2)
+            _n_0 = int(_n_0+1)
         # Keep running sum of degrees
         k_sum += 2 * n_0
         return nodes, k_sum
 
-    def initalGraph_circle(self, n_0):
+    def initialGraph_circle(self, n_0):
         """
         USER CALL FUNCTION
 
@@ -88,7 +90,7 @@ class BA_net:
             selfargs.update({'nodes' : self.nodes})
         return selfargs
 
-    def growBy1(self):
+    def growBy1(self, n):
         """
         USER CALL FUNCTION
 
@@ -100,11 +102,11 @@ class BA_net:
         """
         # Retrieve network state attributes
         nodes = self.nodes
-        n = self.n
         k_sum = self.k_sum
         m = self.m
         # Pass into numba-enabled func, update state attributes
         self.nodes, self.n, self.k_sum = self._growBy1_(nodes, n, k_sum, m)
+        return None
 
 
     @staticmethod
@@ -120,17 +122,62 @@ class BA_net:
         Returns:    Updated vertices, number of nodes and running k_sum.
         """
         _m = 0                              # count up to m vertices
-        nodes[n] = m                        # new vertex has m edges
+        nodes[n] = int(m)                   # new vertex has m edges
         while _m < m:
             nextNode = np.random.choice(n)  # randomly select next node from list
             p = nodes[nextNode]/k_sum       # calc probability
             rand = np.random.random()
             if p >= rand:                   # select node according to degree
-                nodes[nextNode] += 1        # if selected, increase degree by 1
+                nodes[nextNode] = int(nodes[nextNode]+1)        # if selected, increase degree by 1
                 _m += 1                     # increase m counter
                 k_sum += 1                  # degree total increases
         n += 1                              # one more node in network
         return nodes, n, k_sum
+
+    def growToN(self):
+        n = self.n
+        N = self.N
+        m = self.m
+        nodes = self.nodes
+        k_sum = self.k_sum
+        self.nodes, self.n, self.k_sum = self._growToN_(nodes, n, k_sum, m, N)
+        return None
+
+    @staticmethod
+    @numba.njit()
+    def _growToN_(nodes, n, k_sum, m, N):
+        """
+        FOR USE BY self.growToN() ONLY
+
+        Grow network by 1 vertex using BA algorithm.
+        Requires:   list of node degrees, number of nodes in network, running sum of
+                    degrees and number of edges to attach.
+
+        Returns:    Updated vertices, number of nodes and running k_sum.
+        """
+
+        while n < N:
+            _m = 0                              # count up to m vertices
+            nodes[n] = int(m)                   # new vertex has m edges
+            while _m < m:
+                nextNode = np.random.choice(n)  # randomly select next node from list
+                p = nodes[nextNode]/k_sum       # calc probability
+                rand = np.random.random()
+                if p >= rand:                   # select node according to degree
+                    nodes[nextNode] = int(nodes[nextNode]+1)        # if selected, increase degree by 1
+                    _m += 1                     # increase m counter
+                    k_sum += 1                  # degree total increases
+            n += 1                              # one more node in network
+        return nodes, n, k_sum
+
+    # @staticmethod
+    # def _growToN_(growfunc, n, N):
+    #     _n = n
+    #     while _n < N:
+    #         growfunc(n)                     # Updates self.n, but cannot be accessed
+    #         _n += 1                         # from inside @numba. 
+    #                                         # Keep parallel dummy count _n.
+    #     return  None
 
     def getGraph(self):
         """
@@ -138,3 +185,19 @@ class BA_net:
         """
         print("LIST OF NODE DEGREES\n", self.nodes)
         return self.nodes
+
+    def plotDegree(self, plot = True):
+        """
+        Plot degree against frequency using logbin
+        """
+        k, freq = logbin(self.nodes)
+        plt.grid()
+        plt.ylabel('Frequency')
+        plt.xlabel('Degree')
+        plt.yscale('log')
+        plt.xscale('log')
+        plt.plot(k, freq, 'x', label = f'm = {self.m}')
+        if plot:
+            plt.legend()
+            plt.show()
+        return None

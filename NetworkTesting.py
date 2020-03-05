@@ -11,7 +11,7 @@ from NetworkClass import *
 
 # --------------------------TESTING---------------------------------
 
-testBA = BA_net(2, 10000)
-testBA.initialGraph_circle(5)
+testBA = TheGraph(2, 1000)
+testBA.initialGraph()
 testBA.growToN()
 testBA.plotDegree()

@@ -11,7 +11,7 @@ from NetworkClass import *
 
 # --------------------------TESTING---------------------------------
 
-testBA = TheGraph(2, 1000)
-testBA.initialGraph()
-testBA.growToN()
+testBA = TheGraph(3, 100000, n_0=500
+, initial = 'er', p_acc = 0.8)
+testBA.exe()
 testBA.plotDegree()

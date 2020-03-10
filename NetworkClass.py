@@ -20,7 +20,7 @@ class TheGraph:
 
     @staticmethod
     @numba.njit()
-    def _circle_(nodes, n, k_sum, m = None):
+    def _circle_(nodes, n_0, k_sum, p_acc):
         """
         TO BE USED ONLY BY initialGraph()
 
@@ -31,22 +31,38 @@ class TheGraph:
 
         nodes   :   numpy.array, corresponds to self.nodes. Array of length N nodes
                     with nodes[i] = degree of ith node.
-        n       :   int, index of node to add into circle.
+        n_0     :   int, number of initial graph nodes
         k_sum   :   int, running sum of degrees.
-        m       :   None, included for parameterisation of initialGraph() func. Can be 
-                    passed as arg but not used here since m is fixed at 2.
+        p_acc   :   None for initialType = 'c'. Included for parameterisation of 
+                    initialGraph() func.
         """
-
-        nodes[n] = 2                        # Add node to circle
-        k_sum += 2                          # Keep running sum of degrees
-        n += 1
-        return nodes, n, k_sum
+        n = 0
+        while n < n_0:
+            nodes[n] = 2                        # Add node to circle
+            n += 1
+        k_sum += 2*n_0                          # Running sum of degrees 
+        return nodes, n_0, k_sum
 
     @staticmethod
     @numba.njit()
-    def _er_(nodes, n, k_sum, m):
+    def _er_init_(nodes, n_0, k_sum, p_acc):
+        # Loop through all possible edges
+        for i in range(n_0):
+            for j in range(i+1, n_0):
+                rand = np.random.random()
+                # Assess probability
+                if rand > p_acc:
+                    # Add edge
+                    nodes[i] += 1
+                    nodes[j] += 1
+                    k_sum += 2
+        return nodes, n_0, k_sum
+
+    @staticmethod
+    @numba.njit()
+    def _rnd_(nodes, n, k_sum, m):
         """
-        Adds node to Erdos-Renyi graph.
+        Adds node to pure random attachment graph.
 
         PARAMS
 
@@ -58,10 +74,15 @@ class TheGraph:
         """
         _m = 0                              # count up to m vertices
         nodes[n] = int(m)                   # new vertex has m edges
-        attached = np.empty_like(m)         # cannot be zeros since 0 is a node in the graph
+        attached = np.array([0.1 for i in range(m)])    # cannot be zeros since 0 is a node in the graph
         while _m < m:
             nextNode = np.random.choice(n)  # randomly select next node from list
-            if nextNode not in attached:    # check edge does not already exist
+            isAttached = False
+            for att in attached:
+                if att == nextNode:
+                    isAttached = True
+                
+            if isAttached:    # check edge does not already exist
                 _m += 1                     # increase m counter
                 attached[_m] = nextNode
                 nodes[nextNode] += 1
@@ -95,7 +116,7 @@ class TheGraph:
         n += 1                              # one more node in network
         return nodes, n, k_sum
 # ---------------------------------- __init__ ------------------------------------------
-    def __init__(self, m, N, gtype = 'ba', initial = 'c', n_0 = 100):
+    def __init__(self, m, N, gtype = 'ba', initial = 'c', n_0 = 100, p_acc = None):
         """
         Custom class for a growing network.
 
@@ -105,32 +126,41 @@ class TheGraph:
         N       :   int, number of nodes in network.
         gtype   :   str, type of graph to be implemented. 
                     - 'ba' Creates a pure preferential attachment network.
-                    - 'er' Creates a pure random attachment network.
+                    - 'rnd' Creates a pure random attachment network.
         initial :   str, type of initial graph to be implemented. Only applicable for
                     BA network.
                     - 'c' Creates a circular initial graph.
-                    - 'er' Creates a random initial graph.
+                    - 'er' Creates an ER initial graph.
         n_0     :   int, 100 by default.
-                    Number of nodes in initial graph. Only applicable to BA network.
-                    Should be >> m.
+                    Number of nodes in initial graph.
         """
+        if initial == 'er':
+            if p_acc is None:
+                raise Exception("Please specify an acceptance probability 0 < p_acc < 1 for the initial ER network.")
+            elif p_acc is not None and (p_acc < 0 or p_acc > 1):
+                raise Exception("p_acc is a probability and must be between 0 and 1.")
+                
         self.m = m                  # Num edges added at each iteration
         self.N = N                  # Num total vertices desired
         self.n = 0                  # Num vertices in graph at any time
         self.k_sum = 0              # Running sum of all node degrees
         self.n_0 = n_0              # Number of nodes in initial graph
-        # Determine function for initial graph
-        if initial == 'c':
-            self._initial_ = self._circle_
-        elif initial == 'er':
-            self._initial_ = self._er_
+        self.initialType = initial  # Type of initial graph      
+        self.p_acc = p_acc          # Probability of acceptance for ER initial graph
+                                    # p_acc = None for circle initial graph.
+        
         # Determine function for overall graph
         self.gtype = gtype
         if gtype == 'ba':
             self._addNode_ = self._ba_
-        elif gtype == 'er':
-            self._addNode_ = self._er_
-
+        elif gtype == 'rnd':
+            self._addNode_ = self._rnd_
+        # Determine function for initial graph
+        if initial == 'c':
+            self._initial_ = self._circle_
+        elif initial == 'er':
+            self._initial_ = self._er_init_
+        
         # Initialise array of degrees - ordered by chronology of node additions.
         self.nodes = np.zeros_like([0 for i in range(N)], dtype = 'int')
         return None
@@ -144,14 +174,13 @@ class TheGraph:
             # Case that the network has already been grown
             raise Exception("Network is not empty so cannot be initialised again.")
 
-        m = self.m
-        # Make initial network, update state variables in self
-        while self.n < self.n_0:
-            # Retrieve class attributes from self
-            n = self.n
-            nodes = self.nodes
-            k_sum = self.k_sum
-            self.nodes, self.n, self.k_sum = self._initial_(nodes, n, k_sum, m)
+        # Retrieve class attributes from self
+        nodes = self.nodes
+        k_sum = self.k_sum
+        p_acc = self.p_acc
+        n_0 = self.n_0
+        
+        self.nodes, self.n, self.k_sum = self._initial_(nodes, n_0, k_sum, p_acc)
         return None
 # ---------------------------------- Adding nodes ------------------------------------------
     def addNode(self):
@@ -183,22 +212,30 @@ class TheGraph:
                 bar.update()
             return None
 
+    def exe(self):
+        """
+        Complete execution function for a specified graph.
+        """
+        self.initialGraph()
+        self.growToN()
+        return None
+
 # ------------------------------------- Plotting ----------------------------------------------
-    def plotDegree(self, plot = True):
+    def plotDegree(self, plot = True, scale = 1.2):
         """
         Plot degree against frequency using logbin
         """
-        k, freq = logbin(self.nodes)
+        k, freq = logbin(self.nodes, scale)
         plt.grid()
         plt.ylabel('Frequency')
         plt.xlabel('Degree')
         plt.yscale('log')
         plt.xscale('log')
-        plt.plot(k, freq, 'x', label = f'm = {self.m}')
+        fig = plt.plot(k, freq, 'x', label = f'm = {self.m}')
         if plot:
             plt.legend()
             plt.show()
-        return None
+        return fig
 # --------------------------- Retrieve Graph Degrees -----------------------------------
     def getAllDegrees(self):
         """

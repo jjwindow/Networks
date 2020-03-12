@@ -32,6 +32,8 @@ def plotFile(filepath):
     plt.show()
     return None
 
-filepath = 'Data/ba/er_initial/N-1000_m-3_n0-50_2.npy'
+# filepath = 'Data/ba/er_initial/N-1000_m-3_n0-50_2.npy'
+
+filepath = 'Data/ba/er_initial/N-1000000_m-3_n0-500_1.npy'
 
 plotFile(filepath)

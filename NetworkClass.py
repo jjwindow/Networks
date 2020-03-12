@@ -23,7 +23,7 @@ class TheGraph:
 
     @staticmethod
     @numba.njit()
-    def _circle_(nodes, n_0, k_sum, p_acc):
+    def _circle_(nodes, randselect, n_0, k_sum, p_acc):
         """
         TO BE USED ONLY BY initialGraph()
 
@@ -40,16 +40,20 @@ class TheGraph:
                     initialGraph() func.
         """
         n = 0
+        rcount = 0
         while n < n_0:
             nodes[n] = 2                        # Add node to circle
             n += 1
+            randselect[rcount:rcount+1] = n
+            rcount += 2
         k_sum += 2*n_0                          # Running sum of degrees 
-        return nodes, n_0, k_sum
+        return nodes, rselect, rcount, n_0, k_sum
 
     @staticmethod
     @numba.njit()
-    def _er_init_(nodes, n_0, k_sum, p_acc):
+    def _er_init_(nodes, rselect, n_0, k_sum, p_acc):
         # Loop through all possible edges
+        rcount = 0
         for i in range(n_0):
             for j in range(i+1, n_0):
                 rand = np.random.random()
@@ -58,12 +62,17 @@ class TheGraph:
                     # Add edge
                     nodes[i] += 1
                     nodes[j] += 1
+                    rselect[rcount] = i
+                    rselect[rcount+1] = j
+                    rcount += 2
                     k_sum += 2
-        return nodes, n_0, k_sum
+        return nodes, rselect, rcount, n_0, k_sum
+
+# ---------------------------------- Full Graphs ------------------------------------------
 
     @staticmethod
     @numba.njit()
-    def _rnd_(nodes, n, k_sum, m):
+    def _rnd_(nodes, rselect, rcount, n, k_sum, m):
         """
         Adds node to pure random attachment graph.
 
@@ -85,18 +94,18 @@ class TheGraph:
                 if att == nextNode:
                     isAttached = True
                 
-            if isAttached:    # check edge does not already exist
-                _m += 1                     # increase m counter
+            if isAttached == False:         # check edge does not already exist
                 attached[_m] = nextNode
                 nodes[nextNode] += 1
+                _m += 1                     # increase m counter
 
         k_sum += 2*m                        # degree total increases
         n += 1                              # one more node in network
-        return nodes, n, k_sum
+        return nodes, rselect, rcount, n, k_sum
 
     @staticmethod
     @numba.njit()
-    def _ba_(nodes, n, k_sum, m):
+    def _ba_(nodes, rselect, rcount, n, k_sum, m):
         """
         FOR USE BY self.growBy1() ONLY
 
@@ -109,15 +118,20 @@ class TheGraph:
         _m = 0                              # count up to m vertices
         nodes[n] = int(m)                   # new vertex has m edges
         while _m < m:
-            nextNode = np.random.choice(n)  # randomly select next node from list
-            p = nodes[nextNode]/k_sum       # calc probability
-            rand = np.random.random()
-            if p >= rand:                   # select node according to degree
-                nodes[nextNode] = int(nodes[nextNode]+1)        # if selected, increase degree by 1
-                _m += 1                     # increase m counter
-                k_sum += 1                  # degree total increases
+            # nextNode = np.random.choice(n)  # randomly select next node from list
+            # p = nodes[nextNode]/k_sum       # calc probability
+            # rand = np.random.random()
+            # if p >= rand:                   # select node according to degree
+            #     nodes[nextNode] = int(nodes[nextNode]+1)        # if selected, increase degree by 1
+            nextNode = np.random.choice(rselect) # Select next node with prob ~k
+            nodes[nextNode] += 1
+            rcount += 1
+            rselect[rcount] = nextNode
+            _m += 1                         # increase m counter
+            k_sum += 1                      # degree total increases
         n += 1                              # one more node in network
-        return nodes, n, k_sum
+        rselect[rcount:rcount+m] = n        # Add new vertex to random select list
+        return nodes, rselect, rcount, n, k_sum
 # ---------------------------------- __init__ ------------------------------------------
     def __init__(self, m, N, gtype = 'ba', initial = 'c', n_0 = 100, p_acc = None, scale = 1.2):
         """
@@ -143,15 +157,17 @@ class TheGraph:
             elif p_acc is not None and (p_acc < 0 or p_acc > 1):
                 raise Exception("p_acc is a probability and must be between 0 and 1.")
                 
-        self.m = m                  # Num edges added at each iteration
-        self.N = N                  # Num total vertices desired
         self.n = 0                  # Num vertices in graph at any time
         self.k_sum = 0              # Running sum of all node degrees
+        self.rcount = 0             # Index for BA random vertex selection
+
+        self.m = m                  # Num edges added at each iteration
+        self.N = N                  # Num total vertices desired
         self.n_0 = n_0              # Number of nodes in initial graph
         self.initialType = initial  # Type of initial graph      
         self.p_acc = p_acc          # Probability of acceptance for ER initial graph
                                     # p_acc = None for circle initial graph.
-        self.scale = scale
+        self.scale = scale          # Log binning scale
         
         # Determine function for overall graph
         self.gtype = gtype
@@ -165,8 +181,18 @@ class TheGraph:
         elif initial == 'er':
             self._initial_ = self._er_init_
         
-        # Initialise array of degrees - ordered by chronology of node additions.
-        self.nodes = np.zeros_like([0 for i in range(N)], dtype = 'int')
+        if gtype == 'ba' or gtype == 'rndwlk':
+            # Initialise array of degrees - ordered by chronology of node additions.
+            self.nodes = np.zeros_like([0 for i in range(N)], dtype = 'int')
+            # -1 because any positive integer could be interpreted as a node and would bias
+            # the selection.
+            # 2mN because each of the N nodes adds 2m extra degrees.
+        elif gtype == 'rnd':
+            # NxN array - nodes labelled by index in array, each element of array contains array
+            # of nearest neighbours.
+            self.nodes = np.array([np.array([0 for i in range(N)], dtype = 'int') for i in range(N)])
+        # Initialise attachment array for node selection
+        self.rselect = np.array([-1 for i in range(2*m*N)], dtype = 'int')
         return None
 
 # ------------------------------- Make initial graph ---------------------------------------
@@ -183,8 +209,9 @@ class TheGraph:
         k_sum = self.k_sum
         p_acc = self.p_acc
         n_0 = self.n_0
+        rselect = self.rselect
         
-        self.nodes, self.n, self.k_sum = self._initial_(nodes, n_0, k_sum, p_acc)
+        self.nodes, self.rselect, self.rcount, self.n, self.k_sum = self._initial_(nodes, rselect, n_0, k_sum, p_acc)
         return None
 # ---------------------------------- Adding nodes ------------------------------------------
     def addNode(self):
@@ -202,8 +229,10 @@ class TheGraph:
         k_sum = self.k_sum
         m = self.m
         n = self.n
+        rselect = self.rselect
+        rcount = self.rcount
         # Pass into numba-enabled func, update state attributes
-        self.nodes, self.n, self.k_sum = self._addNode_(nodes, n, k_sum, m)
+        self.nodes, self.rselect, self.rcount, self.n, self.k_sum = self._addNode_(nodes, rselect, rcount, n, k_sum, m)
         return None
 
     def growToN(self):

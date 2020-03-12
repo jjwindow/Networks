@@ -12,7 +12,12 @@ import matplotlib.pyplot as plt
 
 # --------------------------TESTING---------------------------------
 
-testBA = TheGraph(3, 1000, n_0=50,
+# testBA = TheGraph(3, 1000, n_0=50,
+#                  initial = 'er', p_acc = 0.8)
+# testBA.exe()
+
+testBA = TheGraph(3, 1000000, n_0=500, gtype = 'ba',
                  initial = 'er', p_acc = 0.8)
 testBA.exe()
+
 

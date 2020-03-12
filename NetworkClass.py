@@ -1,5 +1,7 @@
 """
-Testing implementation of Barabasi-Albert network (preferential attachment)
+Module containing the network class used in the 
+investigation of Barabasi-Albert, Pure Random Attachment
+and Random Walk graphs.
 
 J. J. Window
 Imperial College London
@@ -12,6 +14,7 @@ import numba
 from logbin import logbin
 import matplotlib.pyplot as plt
 import tqdm
+import os
 
 # ------------------------NETWORK CLASS-----------------------------
 
@@ -116,7 +119,7 @@ class TheGraph:
         n += 1                              # one more node in network
         return nodes, n, k_sum
 # ---------------------------------- __init__ ------------------------------------------
-    def __init__(self, m, N, gtype = 'ba', initial = 'c', n_0 = 100, p_acc = None):
+    def __init__(self, m, N, gtype = 'ba', initial = 'c', n_0 = 100, p_acc = None, scale = 1.2):
         """
         Custom class for a growing network.
 
@@ -148,6 +151,7 @@ class TheGraph:
         self.initialType = initial  # Type of initial graph      
         self.p_acc = p_acc          # Probability of acceptance for ER initial graph
                                     # p_acc = None for circle initial graph.
+        self.scale = scale
         
         # Determine function for overall graph
         self.gtype = gtype
@@ -212,30 +216,46 @@ class TheGraph:
                 bar.update()
             return None
 
+    def save(self):
+        n = 1
+        file_path = f'Data/{self.gtype}/{self.initialType}_initial/N-{self.N}_m-{self.m}_n0-{self.n_0}_{n}.npy'
+        while os.path.exists(file_path):
+            n += 1
+            file_path = f'Data/{self.gtype}/{self.initialType}_initial/N-{self.N}_m-{self.m}_n0-{self.n_0}_{n}.npy'
+
+        with open(file_path, 'wb') as file:
+            k, freq = self.bin(self.scale)
+            np.save(file, {'Plot' : [k, freq], 'N' : self.N, 'm' : self.m, 'n_0' : self.n_0, 'gtype' : self.gtype, 'initial' : self.initialType})
+        return file_path
+
     def exe(self):
         """
         Complete execution function for a specified graph.
         """
         self.initialGraph()
         self.growToN()
+        self.save()
         return None
+# ------------------------------------- Log Bin ----------------------------------------------
+    def bin(self, scale):
+        return logbin(self.nodes, scale)
 
 # ------------------------------------- Plotting ----------------------------------------------
-    def plotDegree(self, plot = True, scale = 1.2):
+    def plotDegree(self, plot = True):
         """
         Plot degree against frequency using logbin
         """
-        k, freq = logbin(self.nodes, scale)
+        k, freq = self.bin(self.scale)
         plt.grid()
         plt.ylabel('Frequency')
         plt.xlabel('Degree')
         plt.yscale('log')
         plt.xscale('log')
-        fig = plt.plot(k, freq, 'x', label = f'm = {self.m}')
+        plt.plot(k, freq, 'x', label = f'm = {self.m}')
         if plot:
             plt.legend()
             plt.show()
-        return fig
+        return [k, freq]
 # --------------------------- Retrieve Graph Degrees -----------------------------------
     def getAllDegrees(self):
         """

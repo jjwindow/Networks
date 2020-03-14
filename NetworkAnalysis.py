@@ -11,6 +11,7 @@ Complexity & Networks - Networks Project
 # --------------------------MODULES---------------------------------
 import numpy as np
 import matplotlib.pyplot as plt
+from logbin import logbin
 
 # --------------------Retrieving saved data-------------------------
 
@@ -18,7 +19,7 @@ def plotFile(filepath):
     with open(filepath, 'rb') as file:
         graphDict = np.load(file, allow_pickle=True)
     print(graphDict)
-    graph = graphDict[()].get('Plot')
+    graph = graphDict[()]['Plot']
     N = graphDict[()]['N']
     m = graphDict[()]['m']
 
@@ -34,6 +35,8 @@ def plotFile(filepath):
 
 # filepath = 'Data/ba/er_initial/N-1000_m-3_n0-50_2.npy'
 
-filepath = 'Data/ba/er_initial/N-1000000_m-3_n0-500_1.npy'
+filepath = 'Data/ba/c_initial/N-1000000_m-5_n0-100_1.npy'
 
 plotFile(filepath)
+
+## SAVE NODE ARRAY, LOGBIN IN THIS FILE TO CHANGE SCALE

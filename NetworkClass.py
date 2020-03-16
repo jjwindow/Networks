@@ -26,7 +26,7 @@ class TheGraph:
 
     @staticmethod
     @numba.njit()
-    def _circle_(nodes, rselect, edges, n_0, p_acc):
+    def _circle_(nodes, rselect, n_0, p_acc):
         """
         FOR USE BY self.initialGraph ONLY
 
@@ -63,19 +63,22 @@ class TheGraph:
             rselect[rcount+1] = n
             n += 1
             rcount += 2
-
-        edges[0] = (n_0, 1)                     # First and last edges
-        edges[n_0] = (n_0-1, 0)
+        edges = np.asarray([(0,0) for i in range(n_0)])
+        edges[0][0] = n_0                       # First and last edges
+        edges[0][1] = 1
+        edges[n_0][0] = n_0-1
+        edges[n_0][1] = 0
         i = 1
         while i < n_0:                          # Other edges in circle
-            edges[i] = (i-1, i+1)
+            edges[i][0] = i-1
+            edges[i][1] = i+1
             i += 1
 
         return nodes, rselect, rcount, edges, n_0
 
     @staticmethod
     # @numba.njit()
-    def _er_init_(nodes, rselect, edges, n_0, p_acc):
+    def _er_init_(nodes, rselect, n_0, p_acc):
         """
         FOR USE BY self.initialGraph ONLY
 
@@ -149,7 +152,7 @@ class TheGraph:
         """
         _m = 0                              # count up to m vertices
         nodes[n] = int(m)                   # new vertex has m edges
-        attached = np.array([-1 for i in range(m)], dtype = int)    # cannot be zeros since 0 is a node in the graph
+        attached = [-1 for i in range(m)]   # cannot be zeros since 0 is a node in the graph
         while _m < m:
             nextNode = np.random.choice(n)  # randomly select next node from list
             isAttached = False
@@ -236,34 +239,44 @@ class TheGraph:
         n       :   int, as above but updated (+= 1).
         nn      :   numpy.2darray, as above but updated with new node.
         """
+
         _m = 0                              # count up to m vertices
         nodes[n] = int(m)                   # new vertex has m edges
-        attached = np.array([-1 for i in range(m)], dtype = int)    # cannot be zeros since 0 is a node
-
+        attached = [-1 for i in range(m)]   # cannot be zeros since 0 is a node
+        isAttached = False
         while _m < m:
-            nextNode = np.random.choice(n)
-            isAttached = any([att == nextNode for att in attached])
+            _nextNode = np.random.choice(n)
+            attachedArr = [att == _nextNode for att in attached]
+            for val in attachedArr:
+                # Check if any vals in array are true (any() not usable w/ numba)
+                if val:
+                    isAttached = True
             while isAttached:
                 # repeat until node not already attached
-                nextNode = np.random.choice(n)
-                isAttached = any([att == nextNode for att in attached])
-
+                _nextNode = np.random.choice(n)
+                isAttached = False
+                attachedArr = [att == _nextNode for att in attached]
+                for val in attachedArr:
+                    # Check is any vals in array are true (any() not usable w/ numba)
+                    if val:
+                        isAttached = True
+            # new node not attached after loops
+            nextNode = _nextNode
             walk = (np.random.random() <= q)
             # Go on a random walk:
             while walk:
-                _nextNode = np.random.choice(nn[nextNode]) 
-                isAttached = any([att == _nextNode for att in attached])
+                _nextNode = np.random.choice(nn[nextNode])
                 # Filler vals in nn[nextNode] are -1, exclude these:
-                while _nextNode == -1 or isAttached:
-                    _nextNode = np.random.choice(nn[nextNode]) 
+                while _nextNode == -1:
+                    # print("2nd attach or -1 loop enter")
+                    _nextNode = np.random.choice(nn[nextNode])
                 nextNode = _nextNode
                 walk = (np.random.random() <= q)
-
             attached[_m] = nextNode
             nodes[nextNode] += 1
             nn[n][_m] = nextNode
             empty = np.where(nn[nextNode]==-1)
-            idx = empty[0]                  # Index of first empty element of nn[i]
+            idx = empty[0][0]               # Index of first empty element of nn[i]
             nn[nextNode][idx] = n
             _m += 1                         # increase m counter
         n += 1                              # one more node in network
@@ -273,7 +286,7 @@ class TheGraph:
 
 
 # ---------------------------------- __init__ ------------------------------------------
-    def __init__(self, m, N, gtype = 'ba', initial = 'c', n_0 = 100, p_acc = 0.2, q = 0.5, scale = 1.2):
+    def __init__(self, m, N, gtype = 'ba', initial = 'c', n_0 = 100, p_acc = 0.2, q = 0.5):
         """
         Custom class for a growing network of different types.
 
@@ -311,7 +324,6 @@ class TheGraph:
         self.initialType = initial  # Type of initial graph      
         self.p_acc = p_acc          # Probability of acceptance for ER initial graph
         self.q = q                  # Random walk probability
-        self.scale = scale          # Log binning scale
 
         # Determine function for overall graph
         self.gtype = gtype
@@ -338,9 +350,9 @@ class TheGraph:
         # Attachment array for node selection (BA)
         self.rselect = np.array([-1 for i in range(4*m*N)], dtype = 'int')
         # -1 because +ve ints correspond to nodes
-        # 4mN large enough for initial graph + extra 2*m*N degrees from graph
-        edgenum = int(factorial(n_0)/(2*factorial(n_0-2))) # Max number of edges in ER graph
-        self.edges = np.asarray([(0,0) for i in range(edgenum)]) # empty edge list
+        # # 4mN large enough for initial graph + extra 2*m*N degrees from graph
+        # edgenum = int(factorial(n_0)/(2*factorial(n_0-2))) # Max number of edges in ER graph
+        # self.edges = np.asarray([(0,0) for i in range(edgenum)]) # empty edge list
         return None
 
 # ------------------------------- Make initial graph ---------------------------------------
@@ -362,17 +374,16 @@ class TheGraph:
         p_acc = self.p_acc
         n_0 = self.n_0
         rselect = self.rselect
-        edges = self.edges
+        # edges = self.edges
 
-        self.nodes, self.rselect, self.rcount, self.edges, self.n = self._initial_(nodes, rselect, edges, n_0, k_sum, p_acc)
-        if self.initialType == 'rndwlk':
-            edges = self.edges
+        self.nodes, self.rselect, self.rcount, edges, self.n = self._initial_(nodes, rselect, n_0, p_acc)
+        if self.gtype == 'rndwlk':
             nn = self.nn
+            breakpoint()
             self.nn = self.edgesToNeighbours(edges, nn)
         return None
 
     @staticmethod
-    @numba.njit()
     def edgesToNeighbours(edges, nn):
         """
         Maps edge list from initial graph into array of nearest neighbours used to grow graph in
@@ -388,15 +399,14 @@ class TheGraph:
         ---------------------------------------------------------------------
         nn      :   numpy.2darray, same as above but populated with data from initial graphs.
         """
-        # Remove empty edges from list
-        edges = np.asarray([e for e in edges if e != (0,0)])
-        # Add edges to nearest neighbours list
+        # # Remove empty edges from list
+        # edges = [e for e in edges if not all(e)]
         for n1, n2 in edges:
+            # First 'empty' elements of nn[n1,2].
             empty1 = np.where(nn[n1] == -1)
             empty2 = np.where(nn[n2] == -1)
-            # First 'empty' elements of nn[n1,2].
-            idx1 = empty1[0]                      
-            idx2 = empty2[0]
+            idx1 = empty1[0][0]                     
+            idx2 = empty2[0][0]
             # Add n1,2 as neighbour of n2,1
             nn[n1][idx1] = n2
             nn[n2][idx2] = n1
@@ -428,6 +438,7 @@ class TheGraph:
         elif self.gtype == 'rnd':
             args = (nodes, n, m)
         else:
+            nn = self.nn
             args = (nodes, nn, n, m, q)
         # Pass into numba-enabled func, update state attributes
         self.nodes, self.rselect, self.rcount, self.n, self.nn = self._addNode_(*args)
@@ -449,29 +460,30 @@ class TheGraph:
         Returns filepath.
         """
         n = 1
-        file_path = f'Data/{self.gtype}/{self.initialType}_initial/N-{self.N}_m-{self.m}_n0-{self.n_0}_{n}.npy'
-        while os.path.exists(file_path):
+        filepath = f'Data/{self.gtype}/{self.initialType}_initial/N-{self.N}_m-{self.m}_n0-{self.n_0}_{n}.npy'
+        while os.path.exists(filepath):
             n += 1
-            file_path = f'Data/{self.gtype}/{self.initialType}_initial/N-{self.N}_m-{self.m}_n0-{self.n_0}_{n}.npy'
+            filepath = f'Data/{self.gtype}/{self.initialType}_initial/N-{self.N}_m-{self.m}_n0-{self.n_0}_{n}.npy'
 
-        with open(file_path, 'wb') as file:
-            k, freq = self.bin(self.scale)
-            np.save(file, {'Plot' : [k, freq], 'N' : self.N, 'm' : self.m, 'n_0' : self.n_0, 'gtype' : self.gtype, 'initial' : self.initialType})
-        return file_path
+        with open(filepath, 'wb') as file:
+            # k, freq = self.bin(self.scale)
+            np.save(file, {'Plot' : self.nodes, 'N' : self.N, 'm' : self.m, 'n_0' : self.n_0, 'gtype' : self.gtype, 'initial' : self.initialType})
+        return filepath
 
     def exe(self, save = True):
         """
-        Complete execution function for a specified graph.
+        Complete execution for a specified graph.
         """
         print("MAKING INITIAL GRAPH...\n")
         self.initialGraph()
         print("INITIAL GRAPH COMPLETE\n")
         self.growToN()
+        filepath = None
         if save:
-            self.save()
-            print("DISTRIBUTION SAVED\n")
+            filepath = self.save()
+            print("DISTRIBUTION SAVED\nFilepath = ", filepath)
         print("GRAPH COMPLETE")
-        return None
+        return filepath
 
 # ------------------------------------- Plotting ----------------------------------------------
     def plotDegree(self, plot = True):
@@ -496,3 +508,36 @@ class TheGraph:
         """
         print("LIST OF NODE DEGREES\n", self.nodes)
         return self.nodes
+
+
+def plot_p_k(filepaths, scale = 1.):
+    """
+    Plotting function for log(p) vs log(k) graph.
+
+    PARAMS
+    -----------------------------------------------------------------------
+    filepaths   :   iterable, contains list of filepaths of saved numpy arrays
+                    to be plotted on the graph.
+    scale       :   float, scale used in log binning. Default = 1, corresponds 
+                    to no binning. 1.2 suggested for reasonable binning.
+
+    Returns None.
+    """
+    # Set up plot
+    plt.grid()
+    plt.xscale('log')
+    plt.yscale('log')
+    plt.xlabel("log(k)")
+    plt.ylabel("log(p)")
+    # Plot distributions
+    for filepath in filepaths:
+        with open(filepath, 'rb') as file:
+            graphDict = np.load(file, allow_pickle=True)
+        plot = graphDict[()]['Plot']
+        k, freq = logbin(plot, scale)
+        N = graphDict[()]['N']
+        m = graphDict[()]['m']
+        plt.plot(k, freq, 'x', label = f'm = {m}')
+    plt.legend()
+    plt.show()
+    return None

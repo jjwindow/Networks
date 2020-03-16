@@ -26,14 +26,11 @@ import matplotlib.pyplot as plt
 #     print(f"Initial size: {n_0}\n")
 #     g.exe()
 
-g = TheGraph(5, 1000000, n_0=100, initial = 'c', p_acc = 0.1, scale=1.)
+g = TheGraph(5, 10000, n_0=100, gtype='ba', initial = 'er', p_acc = 0.1)
 # g.initialGraph()
 # g.plotDegree()
 # g.growToN()
 # g.plotDegree()
-g.exe(False)
-g.plotDegree()
-
-# empty = np.where(nn[i]==-1)
-#             idx = empty[0]                      # Index of first empty element of nn[i]
-#             nn[i][idx]
+filepath = [g.exe()]
+print("FP: ", filepath)
+plot_p_k(filepath)

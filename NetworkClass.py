@@ -12,7 +12,9 @@ import numpy as np
 import copy
 import numba
 from logbin import logbin
+import matplotlib as mpl
 import matplotlib.pyplot as plt
+import matplotlib.font_manager as font_manager
 import tqdm
 import os
 from collections import Counter
@@ -444,45 +446,58 @@ class TheGraph:
         self.nodes, self.rselect, self.rcount, self.n, self.nn = self._addNode_(*args)
         return None
 
-    def growToN(self):
+    def growToN(self, bar=True):
         """
         Grows network to final state.
         """
-        with tqdm.tqdm(total=self.N, desc = f"NETWORK N: {self.N}", initial = self.n_0) as bar:
+        if bar:
+            with tqdm.tqdm(total=self.N, desc = f"NETWORK N: {self.N}", initial = self.n_0) as bar:
+                while self.n < self.N:
+                    self.addNode()
+                    bar.update()
+        else:
             while self.n < self.N:
                 self.addNode()
-                bar.update()
         return None
 
-    def save(self):
+    def save(self, multirun = False):
         """
         Saves the graph in a .npy file in directory dependent on graph attributes.
         Returns filepath.
         """
         n = 1
-        filepath = f'Data/{self.gtype}/{self.initialType}_initial/N-{self.N}_m-{self.m}_n0-{self.n_0}_{n}.npy'
-        while os.path.exists(filepath):
-            n += 1
-            filepath = f'Data/{self.gtype}/{self.initialType}_initial/N-{self.N}_m-{self.m}_n0-{self.n_0}_{n}.npy'
+        if not multirun:
+            filepath = f'Data/{self.gtype}/{self.initialType}_initial/variable_p/N-{self.N}_m-{self.m}_n0-{self.n_0}_{n}.npy'
+            while os.path.exists(filepath):
+                n += 1
+                filepath = f'Data/{self.gtype}/{self.initialType}_initial/variable_p/N-{self.N}_m-{self.m}_n0-{self.n_0}_{n}.npy'
+        else:
+            filepath = f'Data/multiruns/{self.gtype}/N-{self.N}_m-{self.m}_n0-{self.n_0}_{n}.npy'
+            while os.path.exists(filepath):
+                n += 1
+                filepath = f'Data/multiruns/{self.gtype}/N-{self.N}_m-{self.m}_n0-{self.n_0}_{n}.npy'
 
         with open(filepath, 'wb') as file:
-            # k, freq = self.bin(self.scale)
-            np.save(file, {'Plot' : self.nodes, 'N' : self.N, 'm' : self.m, 'n_0' : self.n_0, 'gtype' : self.gtype, 'initial' : self.initialType})
+            np.save(file, {'Plot' : self.nodes, 'N' : self.N, 'm' : self.m, 'n_0' : self.n_0, 'gtype' : self.gtype, 'initial' : self.initialType, 'p_acc' : self.p_acc})
         return filepath
 
-    def exe(self, save = True):
+    def exe(self, save = True, multirun = False, bar=True):
         """
         Complete execution for a specified graph.
         """
-        print("MAKING INITIAL GRAPH...\n")
+        if bar:
+            print("MAKING INITIAL GRAPH...\n")
         self.initialGraph()
-        print("INITIAL GRAPH COMPLETE\n")
-        self.growToN()
+        if bar:
+            print("INITIAL GRAPH COMPLETE\n")
+        self.growToN(bar)
         filepath = None
         if save:
-            filepath = self.save()
-            print("DISTRIBUTION SAVED\nFilepath = ", filepath)
-        print("GRAPH COMPLETE")
+            filepath = self.save(multirun)
+            if bar:
+                print("DISTRIBUTION SAVED\nFilepath = ", filepath)
+        if bar:
+            print("GRAPH COMPLETE")
         return filepath
 
 # ------------------------------------- Plotting ----------------------------------------------
@@ -508,9 +523,117 @@ class TheGraph:
         """
         print("LIST OF NODE DEGREES\n", self.nodes)
         return self.nodes
+# -------------------------------- END OF CLASS ----------------------------------------
 
+######################## FUNCTIONS FOR PLOTTING & ANALYSIS #############################
 
-def plot_p_k(filepaths, scale = 1.):
+def theoreticalProb(m, k):
+    """
+    Calculates the theoretical probability of finding degree k in a network
+    of given m.
+
+    PARAMS
+    -----------------------------------------------------------------
+    m       :   int, network attribute.
+    k       :   float, degree for which probability is to be calcualted
+
+    RETURNS
+    -----------------------------------------------------------------
+    P_(infinity)(k) for given m [float].
+    """
+    return (2*m*(m+1))/(k*(k+1)*(k+2))
+
+def theoreticalPlot(m, kmin, kmax):
+    """
+    Return plot arrays for the theoretical fit of a probability
+    distribution of given m, between kmin and kmax. 
+    Range extended to be (0.9*kmin, 1.2*kmax) so the line can be seen 
+    clearly on the plot.
+
+    PARAMS
+    -----------------------------------------------------------------
+    m       :   int, network attribute.
+    kmin    :   int, minimum degree in dataset.
+    kmax    :   int, maximum degree in dataset
+
+    RETURNS
+    -----------------------------------------------------------------
+    k_arr   :   list, range of k values to be plotted on graph.
+    p_arr   :   list, p vaues corresponding to the theoretical
+                probability distribution on the range of k.
+    """
+    k_arr = np.linspace(0.9*kmin, 1.5*kmax, 1000)
+    p_arr = [theoreticalProb(m, k) for k in k_arr]
+    return k_arr, p_arr
+
+def getSavedArray(filepaths):
+    """
+    Retrieves the saved .npy files from the locations in 'filepaths' and
+    unpickles them. The result is an array of dictionaries containing the 
+    attributes of the networks, including the array of node degrees.
+
+    PARAMS
+    --------------------------------------------------------------------------
+    filepaths   :   iterable, should contain the file paths for the pickled 
+                    numpy arrays to be retrieved as binary strings.
+
+    RETURNS
+    --------------------------------------------------------------------------
+    unpickled   :   list, each element is a dictionary of the format specified
+                    in TheGraph.save().
+    """
+    # Plot distributions
+    unpickled = []
+    for filepath in filepaths:
+        # Unpickle saved array
+        with open(filepath, 'rb') as file:
+            netwrk = np.load(file, allow_pickle=True)
+        unpickled.append(netwrk)
+    return unpickled
+    
+def plotSetup(xlabel, ylabel, xscale = 'log', yscale = 'log'):
+    """
+    Sets up the standard plot format used for the report. Saves repeating setup
+    for every type of plot.
+
+    PARAMS
+    ----------------------------------------------------------------------------
+    xlabel      :   str, the parameter passed to plt.xlabel.
+    ylabel      :   str, the parameter passed to plt.ylabel.
+    xscale      :   str, parameter passed to plt.xscale.
+    yscale      :   str, parameter passed to plt.yscale.
+
+    RETURNS
+    ----------------------------------------------------------------------------
+    font_prop   :   FrontProperties object, contains the properties of the 
+                    Computer Modern Roman Serif font used in the plot. Returned
+                    so that it may be used on the other plot elements outside 
+                    this function.
+    """
+    # set tick width
+    mpl.rcParams['xtick.major.size'] = 7
+    mpl.rcParams['xtick.major.width'] = 1.5
+    mpl.rcParams['xtick.minor.size'] = 5
+    mpl.rcParams['xtick.minor.width'] = 1
+    mpl.rcParams['ytick.major.size'] = 7
+    mpl.rcParams['ytick.major.width'] = 1.5
+    mpl.rcParams['ytick.minor.size'] = 5
+    mpl.rcParams['ytick.minor.width'] = 1
+    # Get font properties - font chosen is Computer Modern Serif Roman (LaTeX font).
+    font_path = 'cmunrm.ttf'
+    font_prop = font_manager.FontProperties(fname=font_path, size=18)
+    # Set up plot
+    plt.grid()
+    plt.xscale(xscale)
+    plt.yscale(yscale)
+    plt.xlabel(xlabel, fontproperties = font_prop)
+    plt.ylabel(ylabel, fontproperties = font_prop)
+    # Font has no '-' glyph, so matplotlib serif family used for tick labels.
+    plt.xticks(fontfamily = 'serif', fontsize = 14)
+    plt.yticks(fontfamily = 'serif', fontsize = 14)
+    return font_prop
+
+def plot_p_k(filepaths, scale = 1., fit = True):
     """
     Plotting function for log(p) vs log(k) graph.
 
@@ -520,24 +643,61 @@ def plot_p_k(filepaths, scale = 1.):
                     to be plotted on the graph.
     scale       :   float, scale used in log binning. Default = 1, corresponds 
                     to no binning. 1.2 suggested for reasonable binning.
+    fit         :   bool, default True. Determines whether to plot the theoretical
+                    distribution for each value of m.
 
-    Returns None.
+    RETURNS
+    ------------------------------------------------------------------------
+    None.
     """
-    # Set up plot
-    plt.grid()
-    plt.xscale('log')
-    plt.yscale('log')
-    plt.xlabel("log(k)")
-    plt.ylabel("log(p)")
+    # Define colours
+    colours = ['red', 'blue', 'green', 'orange', 'yellow']
+    # Retrieves pickled network data
+    unpickled = getSavedArray(filepaths)
+    # Sets up plot, returns font properties
+    font_prop = plotSetup(xlabel = "Log(k)", ylabel = "Log(p)")
     # Plot distributions
-    for filepath in filepaths:
-        with open(filepath, 'rb') as file:
-            graphDict = np.load(file, allow_pickle=True)
-        plot = graphDict[()]['Plot']
+    for i, netwrk in enumerate(unpickled):
+        # Raw degree array
+        plot = netwrk[()]['Plot']
+        # Log bin the degree array
         k, freq = logbin(plot, scale)
-        N = graphDict[()]['N']
-        m = graphDict[()]['m']
-        plt.plot(k, freq, 'x', label = f'm = {m}')
-    plt.legend()
+        m = netwrk[()]['m']
+        if scale == 1.:
+            # Plot dots for unbinned data - makes bins easier to see at higher degrees.
+            plt.plot(k, freq, '.', color = colours[i], label = f'm = {m}')
+        else:
+            # For binned data, plot crosses to make points more obvious.
+            plt.plot(k, freq, 'x', markersize = 8, color = colours[i], label = f'm = {m}')
+        if fit:
+            # Plot theoretical distribution
+            kmin = min(k)
+            kmax = max(k)
+            k_arr, p_arr = theoreticalPlot(m, kmin, kmax)
+            p_arr = [p for p in p_arr if p > 1e-7]
+            k_arr = k_arr[:len(p_arr)]
+            plt.plot(k_arr, p_arr, '-', color = colours[i])
+    plt.legend(prop = font_prop)
     plt.show()
     return None
+
+def plotResiduals(filepaths):
+    # Define colours
+    colours = ['red', 'blue', 'green', 'orange', 'yellow']
+    # Retrieves pickled network data
+    unpickled = getSavedArray(filepaths)
+    # Sets up plot, returns font properties
+    font_prop = plotSetup(yscale="log", xlabel = "Log(k)", ylabel = "Residuals of measured data and theory")
+
+    for i, netwrk in enumerate(unpickled):
+        plot = netwrk[()]['Plot']
+        # Fix scale at 1.2 so plot is not overcrowded
+        k, freq = logbin(plot, 1.2)
+        freq = np.asarray(freq)
+        m = netwrk[()]['m']
+        theory = np.asarray([theoreticalProb(m, _k) for _k in k])
+        residuals = [(_freq - _theory)**2 for _freq, _theory in zip(freq, theory)]
+        plt.plot(k, residuals, '-x', color = colours[i], label = f"m = {m}")
+    plt.legend(prop = font_prop)
+    plt.show()
+    return residuals

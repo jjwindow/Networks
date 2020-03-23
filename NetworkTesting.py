@@ -9,6 +9,7 @@ Complexity & Networks - Networks Project
 import numpy as np
 from NetworkClass import *
 import matplotlib.pyplot as plt
+from logbin import logbin
 
 # --------------------------TESTING---------------------------------
 
@@ -26,11 +27,38 @@ import matplotlib.pyplot as plt
 #     print(f"Initial size: {n_0}\n")
 #     g.exe()
 
-g = TheGraph(5, 10000, n_0=100, gtype='ba', initial = 'er', p_acc = 0.1)
-# g.initialGraph()
-# g.plotDegree()
-# g.growToN()
-# g.plotDegree()
-filepath = [g.exe()]
-print("FP: ", filepath)
-plot_p_k(filepath)
+# g = TheGraph(5, 10000, n_0=100, gtype='ba', initial = 'er', p_acc = 0.1)
+# # g.initialGraph()
+# # g.plotDegree()
+# # g.growToN()
+# # g.plotDegree()
+# filepath = [g.exe()]
+# print("FP: ", filepath)
+# plot_p_k(filepath)
+
+a = np.arange(20)
+b = [18, 19, 20, 21]
+breakpoint()
+plots = [[np.random.choice(a) for i in range(np.random.choice(b))] for i in range(5)]
+raw_k_p = [logbin(plot) for plot in plots]
+raw_k = [binned[0] for binned in raw_k_p]
+raw_p = [binned[1] for binned in raw_k_p]
+k = [np.mean(k_arr) for k_arr in zip(*raw_k)]
+p = [np.mean(p_arr) for p_arr in zip(*raw_p)]
+plt.plot(k, p)
+plt.show()
+
+def multiAvg(m, gtype, nruns, degrees):
+    i = 1
+    destpath = f'Data/multiruns/{gtype}/avg/m-{m}_nruns-{nruns}_{i}.npy'
+    while os.path.exists(destpath):
+        i += 1
+        destpath = f'Data/multiruns/{gtype}/avg/m-{m}_nruns-{nruns}_{i}.npy'
+    
+    raw_k_p = [logbin(degree) for degree in degrees]
+    raw_k = [binned[0] for binned in raw_k_p]
+    raw_p = [binned[1] for binned in raw_k_p]
+    k = [np.mean(k_arr) for k_arr in zip(*raw_k)]
+    p = [np.mean(p_arr) for p_arr in zip(*raw_p)]
+    np.save({'k' : k, 'p' : p, 'nruns' : nruns}, destpath)
+    return destpath

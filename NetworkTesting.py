@@ -35,30 +35,12 @@ from logbin import logbin
 # filepath = [g.exe()]
 # print("FP: ", filepath)
 # plot_p_k(filepath)
-
-a = np.arange(20)
-b = [18, 19, 20, 21]
-breakpoint()
-plots = [[np.random.choice(a) for i in range(np.random.choice(b))] for i in range(5)]
-raw_k_p = [logbin(plot) for plot in plots]
-raw_k = [binned[0] for binned in raw_k_p]
-raw_p = [binned[1] for binned in raw_k_p]
-k = [np.mean(k_arr) for k_arr in zip(*raw_k)]
-p = [np.mean(p_arr) for p_arr in zip(*raw_p)]
-plt.plot(k, p)
-plt.show()
-
-def multiAvg(m, gtype, nruns, degrees):
-    i = 1
-    destpath = f'Data/multiruns/{gtype}/avg/m-{m}_nruns-{nruns}_{i}.npy'
-    while os.path.exists(destpath):
-        i += 1
-        destpath = f'Data/multiruns/{gtype}/avg/m-{m}_nruns-{nruns}_{i}.npy'
-    
-    raw_k_p = [logbin(degree) for degree in degrees]
-    raw_k = [binned[0] for binned in raw_k_p]
-    raw_p = [binned[1] for binned in raw_k_p]
-    k = [np.mean(k_arr) for k_arr in zip(*raw_k)]
-    p = [np.mean(p_arr) for p_arr in zip(*raw_p)]
-    np.save({'k' : k, 'p' : p, 'nruns' : nruns}, destpath)
-    return destpath
+# g = TheGraph(3, 1000000, n_0 = 1000, gtype='ba', initial = 'er', p_acc = 6/999)
+# g.exe(multirun = True)
+# g = TheGraph(3, 1000000, n_0 = 1000, gtype='ba', initial = 'er', p_acc = 6/999)
+# g.exe(multirun = True)
+# filepath1 = [b'Data/multiruns/ba/N-1000000_m-3_n0-1000_1.npy']
+# plot_p_k(filepath1, scale = 1.2)
+# filepath2 = [b'Data/multiruns/ba/N-1000000_m-81_n0-1000_4.npy']
+filepath2 = [b'Data/multiruns/ba/avg/m-81_1.npy']
+plot_p_k(filepath2, scale = 1.)

@@ -213,11 +213,48 @@ class TheGraph:
         rcount += m
         n += 1                              # one more node in network
         nn = None
-        return nodes, rselect, rcount, n, nn
+        return nodes, rselect, rcount, n, nn            
 
     @staticmethod
-    @numba.njit()
     def _rndwlk_(nodes, nn, n, m, q):
+        _m = 0                              # count up to m vertices
+        nodes[n] = int(m)                   # new vertex has m edges
+        attached = [-1 for i in range(m)]   # cannot be zeros since 0 is a node
+        while _m < m:
+            nextNode = np.random.choice(n)
+            walk = np.random.random() < q
+            while walk:
+                currentNode = copy.copy(nextNode)
+                empty = np.where(nn[currentNode]==-1)
+                idx = empty[0][0]
+                try:
+                    nextNode = np.random.choice(nn[currentNode][:idx])
+                except ValueError:
+                    print(nn[currentNode][:idx])
+                    print("IDX: ", idx)
+                    print(f"current: {currentNode}, n: {n}")
+                walk = np.random.random() < q
+            isAttached_list = [att == nextNode for att in attached]
+            isAttached = False
+            for val in isAttached_list:
+                if val:
+                    isAttached = True
+            if not isAttached:
+                attached[_m] = nextNode
+                nodes[nextNode] += 1
+                nn[n][_m] = nextNode
+                empty = np.where(nn[nextNode]==-1)
+                idx = empty[0][0]               # Index of first empty element of nn[i]
+                nn[nextNode][idx] = n
+                _m += 1                         # increase m counter
+        n += 1                              # one more node in network
+        rselect = None                      # Needed for num of returns.
+        rcount = None               
+        return nodes, rselect, rcount, n, nn
+                
+    @staticmethod
+    # @numba.njit()
+    def _rndwlk1_(nodes, nn, n, m, q):
         """
         FOR USE BY self.growBy1() ONLY
 
@@ -247,34 +284,57 @@ class TheGraph:
         nodes[n] = int(m)                   # new vertex has m edges
         attached = [-1 for i in range(m)]   # cannot be zeros since 0 is a node
         isAttached = False
-        while _m < m:
-            _nextNode = np.random.choice(n)
-            attachedArr = [att == _nextNode for att in attached]
-            for val in attachedArr:
-                # Check if any vals in array are true (any() not usable w/ numba)
-                if val:
-                    isAttached = True
-            while isAttached:
-                # repeat until node not already attached
-                _nextNode = np.random.choice(n)
-                isAttached = False
-                attachedArr = [att == _nextNode for att in attached]
+        while _m < m: 
+                            # Continue until m edges added
+            # breakpoint()
+            # Select node uniformly at random
+            nextNode = np.random.choice(n)
+            # Decide if going on a walk
+            walk = (np.random.random() <= q)
+            if walk:
+                # Go on a random walk:
+                while walk:
+                    # Filler vals in nn[nextNode] are -1, exclude these:
+                    currentNode = nextNode
+                    empty = np.where(nn[currentNode]==-1)
+                    idx = empty[0][0]               # Index of first empty element of nn[i]
+                    # breakpoint()
+                    print(currentNode)
+                    nextNode = np.random.choice(nn[currentNode][:idx])
+                    walk = (np.random.random() <= q)
+                # When loop exited, check if nextNode attached
+                attachedArr = [att == nextNode for att in attached]
                 for val in attachedArr:
-                    # Check is any vals in array are true (any() not usable w/ numba)
+                    # Check if any vals in array are true (any() not usable w/ numba)
                     if val:
                         isAttached = True
-            # new node not attached after loops
-            nextNode = _nextNode
-            walk = (np.random.random() <= q)
-            # Go on a random walk:
-            while walk:
-                _nextNode = np.random.choice(nn[nextNode])
-                # Filler vals in nn[nextNode] are -1, exclude these:
-                while _nextNode == -1:
-                    # print("2nd attach or -1 loop enter")
-                    _nextNode = np.random.choice(nn[nextNode])
-                nextNode = _nextNode
-                walk = (np.random.random() <= q)
+                while isAttached:
+                    # repeat until node not already attached
+                    empty = np.where(nn[currentNode]==-1)
+                    idx = empty[0][0]               
+                    nextNode = np.random.choice(nn[currentNode][:idx])
+                    isAttached = False
+                    attachedArr = [att == nextNode for att in attached]
+                    for val in attachedArr:
+                        # Check is any vals in array are true (any() not usable w/ numba)
+                        if val:
+                            isAttached = True
+            else:
+                # No walk started, check if first node already attached. If it is,
+                # select new node.
+                isAttached = False
+                attachedArr = [att == nextNode for att in attached]
+                for val in attachedArr:
+                    if val:
+                        isAttached = True
+                while isAttached:
+                    nextNode = np.random.choice(n)
+                    isAttached = False
+                    attachedArr = [att == nextNode for att in attached]
+                    for val in attachedArr:
+                        if val:
+                            isAttached = True
+    
             attached[_m] = nextNode
             nodes[nextNode] += 1
             nn[n][_m] = nextNode
@@ -382,7 +442,6 @@ class TheGraph:
         self.nodes, self.rselect, self.rcount, edges, self.n = self._initial_(nodes, rselect, n_0, p_acc)
         if self.gtype == 'rndwlk':
             nn = self.nn
-            breakpoint()
             self.nn = self.edgesToNeighbours(edges, nn)
         return None
 
@@ -468,11 +527,19 @@ class TheGraph:
         """
         
         if multirun:
-            n = 1
-            filepath = f'Data/multiruns/{self.gtype}/N-{self.N}_m-{self.m}_n0-{self.n_0}_{n}.npy'
-            while os.path.exists(filepath):
-                n += 1
+            if self.gtype == 'rndwlk':
+                n = 1
+                filepath = f'Data/multiruns/{self.gtype}/q-{10*self.q}_{n}.npy'
+                while os.path.exists(filepath):
+                    n += 1
+                    filepath = f'Data/multiruns/{self.gtype}/q-{10*self.q}_{n}.npy'
+            else:
+                n = 1
                 filepath = f'Data/multiruns/{self.gtype}/N-{self.N}_m-{self.m}_n0-{self.n_0}_{n}.npy'
+                while os.path.exists(filepath):
+                    n += 1
+                    filepath = f'Data/multiruns/{self.gtype}/N-{self.N}_m-{self.m}_n0-{self.n_0}_{n}.npy'
+                
         elif k1:
             n = 1
             filepath = f'Data/multiruns/{self.gtype}/k1/N-{self.N}_{n}.npy'
@@ -481,10 +548,10 @@ class TheGraph:
                 filepath = f'Data/multiruns/{self.gtype}/k1/N-{self.N}_{n}.npy'
         else:
             n = 1
-            filepath = f'Data/{self.gtype}/{self.initialType}_initial/variable_p/N-{self.N}_m-{self.m}_n0-{self.n_0}_{n}.npy'
+            filepath = f'Data/{self.gtype}/{self.initialType}_initial/N-{self.N}_m-{self.m}_n0-{self.n_0}_{n}.npy'
             while os.path.exists(filepath):
                 n += 1
-                filepath = f'Data/{self.gtype}/{self.initialType}_initial/variable_p/N-{self.N}_m-{self.m}_n0-{self.n_0}_{n}.npy'
+                filepath = f'Data/{self.gtype}/{self.initialType}_initial/N-{self.N}_m-{self.m}_n0-{self.n_0}_{n}.npy'
 
         with open(filepath, 'wb') as file:
             np.save(file, {'Plot' : self.nodes, 'N' : self.N, 'm' : self.m, 'n_0' : self.n_0, 'gtype' : self.gtype, 'initial' : self.initialType, 'p_acc' : self.p_acc})
@@ -582,6 +649,27 @@ def theoreticalProb_ppa(m, k):
         return 0
     else:
         return (2*m*(m+1))/(k*(k+1)*(k+2))
+
+def theoreticalProb_pra(m, k):
+    """
+    Calculates the theoretical probability of finding degree k in a network
+    of given m.
+
+    PARAMS
+    -----------------------------------------------------------------
+    m       :   int, network attribute.
+    k       :   float, degree for which probability is to be calcualted
+
+    RETURNS
+    -----------------------------------------------------------------
+    P_(infinity)(k) for given m [float].
+    """
+    # if type(m) is list:
+    #     m = m[0]
+    if k < m:
+        return 0
+    else:
+        return ((m/(1+m))**(k-m))/(1+m)
 # --------------------------------- PLOTTING -----------------------------------------
 def theoreticalPlot(m, kmax, gtype = 'ba'):
     """
@@ -603,9 +691,15 @@ def theoreticalPlot(m, kmax, gtype = 'ba'):
     """
     if gtype == 'ba':
         theoreticalProb = theoreticalProb_ppa
-    k_arr = np.linspace(m, 1.5*kmax, 1000)
+    elif gtype == 'rnd':
+        theoreticalProb = theoreticalProb_pra
+    k_arr = np.round(np.linspace(m, 1.5*kmax), 3)
     p_arr = [theoreticalProb(m, k) for k in k_arr]
     return k_arr, p_arr
+
+def k1_theory_ppa(N, m):
+        # Theoretical relation for ppa
+        return 0.5*(np.sqrt(1+4*m*N*(m+1))-1)
 
 def plotSetup(xlabel, ylabel, xscale = 'log', yscale = 'log'):
     """
@@ -649,7 +743,7 @@ def plotSetup(xlabel, ylabel, xscale = 'log', yscale = 'log'):
     plt.yticks(fontfamily = 'serif', fontsize = 14)
     return font_prop
 
-def plot_p_k(filepaths, avg = False, scale = 1., fit = True):
+def plot_p_k(filepaths, gtype, avg = False, scale = 1., fit = True):
     """
     Plotting function for log(p) vs log(k) graph.
 
@@ -668,11 +762,17 @@ def plot_p_k(filepaths, avg = False, scale = 1., fit = True):
     """
     # Define colours
     colours = ['red', 'blue', 'green', 'orange', 'yellow']
+    kmax_arr = []
     # Retrieves pickled network data
     unpickled = getSavedArray(filepaths)
     if avg:
         plots = [[netwrk[()]['k'], netwrk[()]['p'], netwrk[()]['sig_p']] for netwrk in unpickled]
-        m_arr = [3**i for i in range(1, 6)]
+        if gtype == 'rndwlk':
+            legend_keys = [0, 0.1, 0.5, 0.8, 0.95]
+            label = 'q'
+        else:
+            legend_keys = [3**i for i in range(1, 6)]
+            label = 'm'
     else:
         degrees = [netwrk[()]['Plot'] for netwrk in unpickled]
         m_arr = [netwrk[()]['m'] for netwrk in unpickled]
@@ -682,37 +782,40 @@ def plot_p_k(filepaths, avg = False, scale = 1., fit = True):
     font_prop = plotSetup(xlabel = "Degree k", ylabel = "Log(p)")
     # Plot distributions
     for i, plot in enumerate(plots):
-        m = m_arr[i]
+        l = legend_keys[i]
         k = plot[0]
         freq = plot[1]
-        sig_p = plot[2]
-        if m==3 and avg:
-            k = k[1:]
-            freq = freq[1:]
-            sig_p = sig_p[1:]
+
         if scale == 1.:
             # Plot dots for unbinned data - makes bins easier to see at higher degrees.
-            plt.plot(k, freq, '.', color = colours[i], label = f'm = {m}')
+            plt.plot(k, freq, '.', color = colours[i], label = f'{label} = {l}')
         else:
             # For binned data, plot crosses to make points more obvious.
             if avg:
-                # Averaged plots need errorbars
-                plt.errorbar(k, freq, yerr=sig_p, fmt='x', markersize = '8', color = colours[i], label = f'm={m}')
+                sig_p = plot[2]
+                plt.errorbar(k, freq, yerr=sig_p, fmt='x', markersize = '8', color = colours[i], label = f'{label}={l}')
             else:
                 plt.plot(k, freq, 'x', markersize = 8, color = colours[i], label = f'm = {m}')
-        if fit:
+
+        kmax = max(k)
+        kmax_arr.append(kmax)
+        if fit and (gtype != 'rndwlk'):
             # Plot theoretical distribution
-            kmin = min(k)
-            kmax = max(k)
-            k_arr, p_arr = theoreticalPlot(m, kmax)
-            p_arr = [p for p in p_arr if p > 1e-7]
+            k_arr, p_arr = theoreticalPlot(m, kmax, gtype)
+            p_arr = [p for p in p_arr if p > 1e-6]
             k_arr = k_arr[:len(p_arr)]
             plt.plot(k_arr, p_arr, '-', color = colours[i])
+    if gtype == 'rndwlk' and fit:
+        kmax = max(kmax_arr)
+        karr1,parr1 = theoreticalPlot(8, kmax, 'ba')
+        karr2, parr2 = theoreticalPlot(8, kmax, 'rnd')
+        plt.plot(karr1, parr1, '-k', label="PPA theory")
+        plt.plot(karr2, parr2, '-.k', label="PRA theory")
     plt.legend(prop = font_prop)
     plt.show()
     return None
 # ------------------------------------- ANALYSIS ----------------------------------------------
-def multiAvg(m, gtype, nruns, degrees, scale, k1=False, N=1e6):
+def multiAvg(m, gtype, nruns, degrees, scale, k1=False, N=1e6, q=None):
     """
     Average the log-binned probability distributions for multiple runs
     of a network of fixed N, m. Saves the log-binned average distribution in
@@ -725,7 +828,7 @@ def multiAvg(m, gtype, nruns, degrees, scale, k1=False, N=1e6):
                 to grow the network in full; either pure preferential attachment,
                 pure random attachment, or random walk respectively.
     nruns   :   int, number of graph instances to average results over.
-    degrees :   iterable, array of node degrees of a fully grown network.
+    degrees :   iterable, array of arrays of node degrees of a fully grown network.
     scale   :   float, parameter passed to logbin function. 1 corresponds to no 
                 binning. 1.2 is typical.
     k1      :   bool, default = False. Whether the data is going to be used to 
@@ -748,11 +851,17 @@ def multiAvg(m, gtype, nruns, degrees, scale, k1=False, N=1e6):
         while os.path.exists(destpath):
             i += 1
             destpath = f'Data/multiruns/{gtype}/k1/avg/N-{N}_{i}.npy'
-    else:    
-        destpath = f'Data/multiruns/{gtype}/avg/m-{m}_{i}.npy'
-        while os.path.exists(destpath):
-            i += 1
+    else: 
+        if gtype == 'rndwlk':   
+            destpath = f'Data/multiruns/{gtype}/avg/q-{10*q}_{i}.npy'
+            while os.path.exists(destpath):
+                i += 1
+                destpath = f'Data/multiruns/{gtype}/avg/q-{10*q}_{i}.npy'
+        else: 
             destpath = f'Data/multiruns/{gtype}/avg/m-{m}_{i}.npy'
+            while os.path.exists(destpath):
+                i += 1
+                destpath = f'Data/multiruns/{gtype}/avg/m-{m}_{i}.npy'
     
     # Logbin degree arrays
     raw_k_p = [logbin(degree, scale = scale) for degree in degrees]
@@ -760,7 +869,7 @@ def multiAvg(m, gtype, nruns, degrees, scale, k1=False, N=1e6):
     raw_k = [binned[0] for binned in raw_k_p]
     raw_p = [binned[1] for binned in raw_k_p]
     # Calculate averages for each bin
-    k = [np.mean(k_arr) for k_arr in zip(*raw_k)]
+    k = [int(np.mean(k_arr)) for k_arr in zip(*raw_k)]
     p = [np.mean(p_arr) for p_arr in zip(*raw_p)]
     # Calculate uncertainty
     sig_p = [np.std(p_arr) for p_arr in zip(*raw_p)]
@@ -768,40 +877,70 @@ def multiAvg(m, gtype, nruns, degrees, scale, k1=False, N=1e6):
     if k1:
         np.save(destpath, {'k' : k, 'p' : p, 'sig_p' : sig_p, 'nruns' : nruns, 'N' : N})
     else:
-        np.save(destpath, {'k' : k, 'p' : p, 'sig_p' : sig_p, 'nruns' : nruns, 'm' : m})
+        if gtype == 'rndwlk':
+            np.save(destpath, {'k' : k, 'p' : p, 'sig_p' : sig_p, 'nruns' : nruns, 'q' : q})
+        else:
+            np.save(destpath, {'k' : k, 'p' : p, 'sig_p' : sig_p, 'nruns' : nruns, 'm' : m})
     return destpath
 
-def avgAllm(nruns, gtype = 'ba'):
+def avgAllm(gtype, nruns, scale=1.2):
     """
-    Average the log-binned degree distributions for all runs of each
-    different m, fixed N. 
+    Calculates averaged distributions for all values of m, across nruns repeats.
 
     PARAMS
-    --------------------------------------------------------------------------------------
-    nruns   :   int, number of runs over which to take average. Passed into multiAvg().
-    gtype   :   str, type of graph grown from 'ba', 'rnd', 'rndwlk'.
-
-    RETURNS
-    --------------------------------------------------------------------------------------
-    avgpaths:   list, contains filepaths of the saved .npy files for average log-binned 
-                distributions of each value of m.
+    ---------------------------------------------------------------------------------------------
+    gtype   :   str, 'ba' 'rnd' or 'rndwlk'. Type of graph to be implemented.
+    nruns   :   int, Number of repeated graphs from which to calculate average for each
+                different m.
+    scale   :   float, default = 1.2. Log binning parameter. 1 denotes no binning.
     """
-    avgpaths = []
-    # m = [3**1, 3**2,...,3**5]
-    for i in range(1,6):
-        m = 3**i
-        # Define filepaths
-        filepaths = [f"Data/multiruns/{gtype}/N-1000000_m-{m}_n0-1000_{j}.npy" for j in range(1, nruns)]
-        # Get array of node degrees
-        unpickled = getSavedArray(filepaths)
-        degrees = [netwrk[()]['Plot'] for netwrk in unpickled]
-        # Get average for each m across nruns networks, return filepath of average result.
-        avgpaths.append(multiAvg(m, gtype, nruns, degrees, 1.2))
+    avgpaths = {}
+    if gtype == 'rndwlk':
+        m=8
+        q_arr = [0.0, 0.1, 0.5, 0.8, 0.95]
+        for q in q_arr:
+            filepaths = [f'Data/multiruns/{gtype}/q-{10*q}_{j}.npy' for j in range(1, nruns)]
+            unpickled = getSavedArray(filepaths)
+            degrees = [netwrk[()]['Plot'] for netwrk in unpickled]
+            # Calculate averages
+            avgpaths[q] = multiAvg(m = m, gtype = gtype, nruns = nruns, degrees = degrees, scale = scale, k1=False, N=1e4, q = q)
+    else:
+        # Calcualte avg for each m
+        for i in range(1,6):
+            m = 3**i
+            # Get node degree data
+            filepaths = [f'Data/multiruns/{gtype}/N-1000000_m-{m}_n0-1000_{j}.npy' for j in range(1, nruns)]
+            unpickled = getSavedArray(filepaths)
+            degrees = [netwrk[()]['Plot'] for netwrk in unpickled]
+            # Calculate averages
+            avgpaths[m] = multiAvg(m, gtype, nruns, degrees, scale)
+    #return file paths of average for each m or q
     return avgpaths
 
-def ks(filepaths, gtype = 'ba'):
+def rescale(k, p, k1, N):
     """
-    Implementation of the Kolmogorov-Smirnov test.
+    Rescale degree distribution by k1/sqrt(N). Used in data collapse.
+
+    PARAMS
+    -----------------------------------------------------------------------------------------
+    k       :   iterable, array of degree bins.
+    p       :   iterable, log binned probabilities.
+    k1      :   float, largest degree.
+    N       :   int, network size.
+
+    RETURNS
+    -----------------------------------------------------------------------------------------
+    k_scale :   list, scaled degree values.
+    p_scale :   list, scaled probability values.
+    """
+    k_scale = [_k/(k1/np.sqrt(N)) for _k in k]
+    pmax = max(p)
+    p_scale = [_p/pmax for _p in p]
+    return k_scale, p_scale
+
+def ks_allm(filepaths, gtype = 'ba'):
+    """
+    Implementation of the Kolmogorov-Smirnov test for multiple m values.
 
     PARAMS
     ----------------------------------------------------------------------------------------
@@ -826,20 +965,40 @@ def ks(filepaths, gtype = 'ba'):
     # Select theoretical comparison based on graph type
     if gtype == 'ba':
         f_theory = theoreticalProb_ppa
+    elif gtype == 'rnd':
+        f_theory = theoreticalProb_pra
 
     ks = {}
     for m, k, p in zip(m_arr, k_arr, p_arr):
         # Truncate values k<m.
         new_k = [_k for _k in k if _k >= m]
         new_p = [_p for _k, _p in zip(k, p) if _k >= m]
-        p_theory = [f_theory(m, _k) for _k in new_k]
-        n = len(new_p)
-        # Calculate theoretical cdf
-        cdf = [sum(p_theory[:i]) for i in range(n)]
-        # Observed edf
-        edf = [sum(new_p[:i])/n for i in range(n)]
-        diff = [abs(c-e) for c, e in zip(cdf, edf)]
-        # K-S statistic, by definition.
-        D = max(diff)
+        D, n = ks(new_k, new_p, f_theory, (m))
         ks[m] =  [D, n]
     return ks
+
+def ks(x, y, func, funcargs):
+    """
+    General K-S test.
+    PARAMS
+    --------------------------------------------------------------
+    x       :   iterable, independent variable.
+    y       :   iterable, measured dependent variable.
+    func    :   callable, theoretical distribution to compare to.
+    funcargs:   tuple, other arguments to pass to func.
+
+    RETURNS
+    ---------------------------------------------------------------
+    D       :   float, the K-S statistic for the data.
+    n       :   int, number of data points in sample.
+    """
+    pdf = [func(*funcargs, _x) for _x in x]
+    n = len(x)
+    # Calculate theoretical cdf
+    cdf = [sum(pdf[:i]) for i in range(n)]
+    # Observed edf
+    edf = [sum(y[:i])/n for i in range(n)]
+    diff = [abs(c-e) for c, e in zip(cdf, edf)]
+    # K-S statistic, by definition.
+    D = max(diff)
+    return D, n
